@@ -1,0 +1,227 @@
+! =============================================================================
+! Enhanced MESA inlist for stellar evolution with synthetic photometry
+! =============================================================================
+! This inlist evolves a star from pre-main sequence through multiple 
+! evolutionary phases and calculates synthetic magnitudes in multiple filters
+! using the custom colors module.
+!
+! Author: Niall Miller (2025)
+! =============================================================================
+
+! =============================================================================
+! STAR_JOB NAMELIST - Model creation and run control settings
+! =============================================================================
+&star_job
+      ! === Model Creation Settings ===
+      create_pre_main_sequence_model = .true.  ! Start from pre-MS contraction rather than ZAMS
+                                                ! This gives more complete evolutionary track
+      
+      ! === Pre-MS Relaxation Settings ===
+      pre_ms_relax_to_start_radiative_core = .false.  ! Don't force radiative core formation
+                                                       ! Let it develop naturally
+      pre_ms_relax_num_steps = 100                     ! Number of steps for initial relaxation
+      
+      ! === Termination Conditions ===
+      required_termination_code_string = ''           ! No automatic termination condition
+                                                       ! Will run until max_age or max_model_number
+      
+      ! === Model Saving ===
+      save_model_when_terminate = .true.              ! Save final model for restart
+      save_model_filename = 'custom_colors_end.mod'   ! Output model filename
+      
+      ! === Graphics and Real-time Plotting ===
+      pgstar_flag = .true.                            ! Enable real-time plotting during run
+                                                       ! Set to .false. for batch/cluster runs
+                                                       ! Shows CMD and light curves in real-time
+      
+      ! === Custom Output Configuration ===
+      history_columns_file = 'custom_colors_history_columns.list'  ! Additional history columns
+                                                                    ! Must exist in working directory
+      
+      ! === Verbosity and Debugging ===
+      show_log_description_at_start = .true.          ! Print detailed run info at startup
+                                                       ! Helpful for debugging parameter settings
+/
+
+! =============================================================================
+! EOS NAMELIST - Equation of State Settings
+! =============================================================================
+! Using MESA defaults for equation of state
+! Default EOS handles ideal gas + radiation + Coulomb corrections + degeneracy
+&eos
+      ! All parameters use MESA defaults
+      ! See star/defaults/eos.defaults for available options
+/
+
+! =============================================================================
+! KAP NAMELIST - Opacity Settings
+! =============================================================================
+&kap
+      ! === Opacity Table Selection ===
+      Zbase = 0.014d0              ! Base metallicity (Z) for opacity tables
+                                   ! Should match initial_z in controls namelist
+                                   ! Solar metallicity ≈ 0.014 (Grevesse & Sauval 1998)
+      
+      kap_file_prefix = 'gs98'     ! Use Grevesse & Sauval 1998 opacity tables
+                                   ! Alternative: 'a09' for Asplund et al. 2009
+/
+
+! =============================================================================
+! COLORS NAMELIST - Synthetic Photometry Settings
+! =============================================================================
+! Custom colors module for calculating synthetic magnitudes
+! Author: Niall Miller
+&colors
+      ! === Enable Colors Module ===
+      use_colors = .true.                      ! Activate synthetic photometry calculations
+      
+      ! === Filter System Configuration ===
+      ! Filter transmission curves directory
+      ! GAIA directory should contain filter files:
+      ! - G.dat          (White light photometer - main Gaia band)
+      ! - Gbp_bright.dat (Blue photometer for bright stars)
+      ! - Gbp.dat        (Blue photometer standard)
+      ! - Gbp_faint.dat  (Blue photometer for faint stars)
+      ! - Grp.dat        (Red photometer)
+      ! - Grvs.dat       (Radial Velocity Spectrometer)
+      instrument = '/colors/data/filters/GAIA/GAIA'
+      
+      ! === Calibration Spectrum ===
+      ! Vega spectrum for zero-point magnitude calibration
+      ! File format: wavelength (Å), flux (erg/s/cm²/Å)
+      ! Defines Vega = 0.0 mag in all filters (Vega magnitude system)
+      vega_sed = '/colors/data/stellar_models/vega_flam.csv'
+      
+      ! === Stellar Atmosphere Models ===
+      ! Directory containing stellar atmosphere SEDs for interpolation
+      ! Required files:
+      ! - lookup_table.csv: maps filenames to Teff, log_g, [Fe/H]
+      ! - Individual SED files: wavelength vs surface flux
+      ! - flux_cube.bin: pre-computed interpolation grid (optional)
+      stellar_atm = '/colors/data/stellar_models/Kurucz2003all/'
+      
+      ! === Physical Parameters ===
+      distance = 3.0857d19         ! Distance to star in cm
+                                   ! 1 pc = 3.0857×10^16 m = 3.0857×10^18 cm
+                                   ! This gives absolute magnitudes (distance = 10 pc)
+      
+      ! === Output Configuration ===
+      colors_results_directory = 'SED'        ! Directory for detailed SED output files
+      make_csv = .true.                       ! Generate detailed CSV files showing:
+                                              ! - Filter convolution process
+                                              ! - Complete SED at each timestep
+                                              ! - Files like: SED/G_SED.csv, SED/VEGA_G_SED.csv
+                                              ! Required for SED plotting
+/ ! end of colors namelist
+
+! =============================================================================
+! CONTROLS NAMELIST - Main Stellar Evolution Parameters
+! =============================================================================
+&controls
+      ! See star/defaults/controls.defaults for complete parameter list
+      
+      ! === Initial Stellar Parameters ===
+      initial_mass = 5d0           ! Initial stellar mass in solar masses
+                                   ! 5 M☉ is intermediate mass - will evolve through
+                                   ! main sequence, subgiant, and red giant phases
+      
+      initial_z = 0.0140           ! Initial metal mass fraction (metallicity)
+                                   ! Z = 0.014 ≈ solar metallicity
+                                   ! Should match Zbase in kap namelist
+      
+      ! === Evolution Termination Conditions ===
+      max_age = 5d9                ! Maximum age in years (15 Gyr)
+                                   ! Much longer than main sequence lifetime of 5 M☉ star
+      
+      max_model_number = 10000      ! Maximum number of evolutionary models
+                                   ! Safety limit to prevent runaway calculations
+      
+      ! === Central Composition Limits ===
+      xa_central_lower_limit_species(1) = 'none'   ! No central abundance termination
+      xa_central_lower_limit(1) = 0                ! (disabled)
+                                                   ! Alternative: 'h1' with limit 1e-3
+                                                   ! to stop when H is depleted
+      
+      ! === Stellar Wind Settings ===
+      hot_wind_scheme = 'Dutch'            ! Wind prescription for hot stars (T > 10,000 K)
+      cool_wind_RGB_scheme = 'Dutch'       ! Wind prescription for cool giants
+      Dutch_scaling_factor = 1d0          ! Multiplicative factor for wind mass loss
+                                           ! 1.0 = standard rates, >1 = enhanced winds
+      
+      ! === Convective Mixing Length Theory ===
+      mixing_length_alpha = 1.8d0         ! Mixing length parameter α_MLT
+                                           ! Standard solar-calibrated value
+                                           ! Controls convective efficiency
+      
+      ! === Convective Mixing and Overshooting ===
+      use_Ledoux_criterion = .true.       ! Use Ledoux (not Schwarzschild) criterion
+                                           ! Accounts for composition gradients
+                                           ! More physically realistic
+      
+      ! Core overshooting parameters (exponential decay model)
+      overshoot_scheme(1) = 'exponential'    ! Exponential decay of mixing beyond Schwarzschild boundary
+      overshoot_zone_type(1) = 'any'         ! Apply to any convective zone
+      overshoot_zone_loc(1) = 'core'         ! Specifically target convective core
+      overshoot_bdy_loc(1) = 'top'           ! Overshoot at top boundary of core
+      overshoot_f(1) = 0.01d0                ! Overshooting efficiency parameter
+      overshoot_f0(1) = 0.001d0              ! Minimum diffusion coefficient
+      
+      ! === Energy Equation Options ===
+      energy_eqn_option = 'dedt'          ! Use dE/dt formulation (MESA V default)
+                                           ! More stable than alternatives
+      
+      use_gold_tolerances = .true.         ! Use pre-defined "gold standard" tolerances
+                                           ! Ensures high accuracy with reasonable speed
+      
+      ! === Output Frequency ===
+      history_interval = 1                ! Write to history file every model
+                                           ! Use larger values (10-100) for long runs
+/ ! end of controls namelist
+
+! =============================================================================
+! PGSTAR NAMELIST - Real-time Plotting Configuration
+! =============================================================================
+&pgstar
+      ! === General Plot Settings ===
+      pgstar_interval = 1                 ! Update plots every model
+                                           ! Use larger values for faster runs
+      
+      ! === Hertzsprung-Russell Diagram ===
+      HR_win_flag = .true.                ! Enable HR diagram window
+      HR_logT_min = 3.2                   ! Minimum log(Teff) - cool giants
+      HR_logT_max = 4.3                   ! Maximum log(Teff) - hot main sequence
+      HR_logL_min = -1.0                  ! Minimum log(L/L☉) - below main sequence
+      HR_logL_max = 4.0                   ! Maximum log(L/L☉) - bright giants
+      
+      ! === Gaia G-band Light Curve ===
+      History_Track2_win_flag = .true.    ! Enable G magnitude vs time plot
+      History_Track2_xname = 'star_age'   ! X-axis: stellar age
+      History_Track2_yname = 'G'          ! Y-axis: Gaia G magnitude
+      History_Track2_title = 'G Light Curve'
+      History_Track2_xaxis_label = 'Age (yr)'
+      History_Track2_yaxis_label = 'G mag'
+      
+      ! === Gaia Red Photometer Light Curve ===
+      History_Track3_win_flag = .true.    ! Enable Grp magnitude vs time plot
+      History_Track3_xname = 'star_age'   ! X-axis: stellar age  
+      History_Track3_yname = 'Grp'        ! Y-axis: Gaia Grp magnitude
+      History_Track3_title = 'Grp Light Curve'
+      History_Track3_xaxis_label = 'Age (yr)'
+      History_Track3_yaxis_label = 'Grp mag'  ! Added missing label
+      
+      ! === Gaia Radial Velocity Spectrometer Light Curve ===
+      History_Track4_win_flag = .true.    ! Enable Grvs magnitude vs time plot
+      History_Track4_xname = 'star_age'   ! X-axis: stellar age
+      History_Track4_yname = 'Grvs'       ! Y-axis: Gaia Grvs magnitude  
+      History_Track4_title = 'Grvs Light Curve'
+      History_Track4_xaxis_label = 'Age (yr)'
+      History_Track4_yaxis_label = 'Grvs mag'  ! Added missing label
+      
+      ! === Bolometric Flux Evolution ===
+      History_Track5_win_flag = .true.    ! Enable bolometric flux vs time plot
+      History_Track5_xname = 'star_age'   ! X-axis: stellar age
+      History_Track5_yname = 'Flux_bol'   ! Y-axis: bolometric flux
+      History_Track5_title = 'Bolometric Flux'
+      History_Track5_xaxis_label = 'Age (yr)'
+      History_Track5_yaxis_label = 'Flux_bol (erg/s/cm²)'  ! Added missing label with units
+/
